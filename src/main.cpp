@@ -7,6 +7,8 @@
 #include "FusionEKF.h"
 #include "ground_truth_package.h"
 #include "measurement_package.h"
+#include "RadarMeasurementUnit.h"
+#include "LinearMeasurementUnit.h"
 
 using namespace std;
 using Eigen::MatrixXd;
@@ -127,6 +129,33 @@ int main(int argc, char* argv[]) {
   // Create a Fusion EKF instance
   FusionEKF fusionEKF;
 
+
+  // initialize covariance matrices
+  MatrixXd R_laser = MatrixXd(2, 2);
+  MatrixXd R_radar = MatrixXd(3, 3);
+  MatrixXd H_laser = MatrixXd::Identity(2, 4);
+
+  //measurement covariance matrix - laser
+  R_laser << 0.0225, 0,
+      0, 0.0225;
+
+  //measurement covariance matrix - radar
+  R_radar << 0.09, 0, 0,
+      0, 0.0009, 0,
+      0, 0, 0.09;
+
+  // initialize radar measurement unit
+  RadarMeasurementUnit*  rmu =  new RadarMeasurementUnit(R_radar);
+
+  // add it to EKF
+  fusionEKF.AddMeasurementUnit(rmu, MeasurementPackage::RADAR);
+
+  // initialize Lidar measurement unit, which is linear by it's type
+  LinearMeasurementUnit* lmu = new LinearMeasurementUnit(H_laser, R_laser);
+
+  // add it to EKF
+  fusionEKF.AddMeasurementUnit(lmu, MeasurementPackage::LASER);
+
   // used to compute the RMSE later
   vector<VectorXd> estimations;
   vector<VectorXd> ground_truth;
@@ -139,10 +168,11 @@ int main(int argc, char* argv[]) {
     fusionEKF.ProcessMeasurement(measurement_pack_list[k]);
 
     // output the estimation
-    out_file_ << fusionEKF.ekf_.x_(0) << "\t";
-    out_file_ << fusionEKF.ekf_.x_(1) << "\t";
-    out_file_ << fusionEKF.ekf_.x_(2) << "\t";
-    out_file_ << fusionEKF.ekf_.x_(3) << "\t";
+    VectorXd  x = fusionEKF.getX();
+    out_file_ << x(0) << "\t";
+    out_file_ << x(1) << "\t";
+    out_file_ << x(2) << "\t";
+    out_file_ << x(3) << "\t";
 
     // output the measurements
     if (measurement_pack_list[k].sensor_type_ == MeasurementPackage::LASER) {
@@ -163,11 +193,12 @@ int main(int argc, char* argv[]) {
     out_file_ << gt_pack_list[k].gt_values_(2) << "\t";
     out_file_ << gt_pack_list[k].gt_values_(3) << "\n";
 
-    estimations.push_back(fusionEKF.ekf_.x_);
+    estimations.push_back(x);
     ground_truth.push_back(gt_pack_list[k].gt_values_);
   }
 
   // compute the accuracy (RMSE)
+
   Tools tools;
   cout << "Accuracy - RMSE:" << endl << tools.CalculateRMSE(estimations, ground_truth) << endl;
 
